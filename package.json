@@ -1,0 +1,22 @@
+{
+  "name": "ko-compile",
+  "version": "0.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "ko-compile": "bin/cmd.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "tape": "^2.13.0",
+    "glob": "^3.2.9"
+  },
+  "dependencies": {
+    "minimist": "^0.1.0",
+    "parse5": "^0.8.3"
+  }
+}
