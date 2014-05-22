@@ -47,7 +47,7 @@ var programNode = {
 }
 
 var ast = toAst(programNode)
-qualifyModelPropertyAccess(ast)
+qualifyModelPropertyAccess(ast.body[1])
 
 
 //console.log(ast)

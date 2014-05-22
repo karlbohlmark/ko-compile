@@ -1,6 +1,5 @@
-<div>
+<div style="background-color: green">
     <ul>
-        <li data-bind='foreach: item in items, text: item.text'>hello</li>
-        <li data-bind='foreach: item in items, text: item.text'>world</li>
+        <li data-bind='foreach: item in items, text: item.text' data-bind-foreach="item in items" data-bind-text="item.text">hello</li><li data-bind='foreach: item in items, text: item.text' data-bind-foreach="item in items" data-bind-text="item.text">world</li>
     </ul>
 </div>

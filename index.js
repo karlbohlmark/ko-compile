@@ -4,6 +4,7 @@ var inspect = util.inspect;
 var esparser = require("acorn");
 var parse5 = require("parse5");
 var estraverse = require("estraverse");
+var escodegen = require("escodegen").generate;
 var b = require('ast-types').builders;
 
 var Parser = parse5.Parser;
@@ -35,16 +36,13 @@ function compile (tmpl) {
     // 2) Compile - Create rendering AST from DOM
     var ast = toJavaScriptAST(doc);
 
-    qualifyModelPropertyAccess(ast);
 
-    //doc = traverse(doc, rewriteForeach);
-
-    var s = new parse5.TreeSerializer();
-    var t = s.serialize(doc);
-    fs.writeFileSync("example.test", t);
+    intermediateResult(ast, "ast-pre-qualify.json");
+    intermediateResult(ast.body[1], "fn.json");
+    qualifyModelPropertyAccess(ast.body[1]);
 
     //process.exit()
-    return "module.exports = function(model) { return " +  JSON.stringify("t") + "}"
+    return escodegen(ast);
 }
 
 
@@ -60,6 +58,13 @@ function qualifyModelPropertyAccess(ast) {
     var scope = new ScopeChain();
     var rootModelVarName = 'model';
     var parent = null;
+
+    function qualifyIfUndeclared(node) {
+        if (!scope.contains(node.name)) {
+            node.name = rootModelVarName + '.' + node.name;
+        }
+    }
+
     estraverse.traverse(ast, {
         enter: function (node, parent) {
             if (node.type == 'FunctionExpression' || node.type == 'FunctionDeclaration') {
@@ -75,13 +80,17 @@ function qualifyModelPropertyAccess(ast) {
                 parent.type != "FunctionDeclaration" &&
                 parent.type != "MemberExpression") {
 
-                console.log("Variable used:" + node.name);
-                if (!scope.contains(node.name)) {
-                    node.name = rootModelVarName + '.' + node.name;
-                }
+                qualifyIfUndeclared(node);
 
-                console.log(node.name);
             }
+
+            if (node.type == "MemberExpression" && parent.type != "MemberExpression") {
+                var obj = node.object;
+                while (obj.type == "MemberExpression" && (obj = obj.object))
+                    ;
+                qualifyIfUndeclared(obj);
+            }
+
         },
         leave: function (node, parent) {
             if (node.type == 'FunctionExpression' || node.type == 'FunctionDeclaration') {
@@ -121,7 +130,7 @@ function concatBuffer(node) {
 }
 
 function concatAttr (attr) {
-    return concatBuffer(b.literal(attr.name + '=' + '"' + attr.value + '"'))
+    return concatBuffer(b.literal(' ' + attr.name + '=' + '"' + attr.value + '"'))
 }
 
 var loopVars = {};
@@ -175,7 +184,7 @@ nodeTypes.foreach = function compileForeach(node) {
     var itemVarDecl = b.variableDeclaration('var', [
         b.variableDeclarator(
             b.identifier(node.loopVar),
-            indexedProperty(b.identifier(node.enumerable), b.identifier(node.loopVar))
+            indexedProperty(b.identifier(node.enumerable), b.identifier(loopVarName))
         )
     ])
     
@@ -186,6 +195,7 @@ nodeTypes.foreach = function compileForeach(node) {
 nodeTypes.documentFragment = function compileDocumentFragment(node) {
     var children = flatten(node.childNodes.map(toJavaScriptAST));
     children.unshift(declareEmptyBuffer())
+    children.push(b.returnStatement(b.identifier(bufferVarName)));
 
     var fnDecl = b.functionDeclaration(
         b.identifier('render'),

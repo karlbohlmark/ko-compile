@@ -34,7 +34,7 @@ test("parse test", function (t) {
         fs.writeFileSync(renderedTemplateName, renderedTemplateString);
 
         var renderedCanonicalName = template.replace(".tmpl", ".rendered.canonical")
-        var expectedCanonicalName = template.replace(".html", ".canonical.html")
+        var expectedCanonicalName = template.replace(".tmpl", ".canonical")
 
         var renderedCanonicalString = canonicalHtml(renderedTemplateString);
         var expectedCanonicalString = canonicalHtml(expectedString);
