@@ -10,7 +10,7 @@ var Serializer = parse5.TreeSerializer;
 
 // options is optional
 test("parse test", function (t) {
-    glob.sync("*.tmpl.html",function (err, files) {
+    glob("*.tmpl.html", function (err, files) {
       if (err) throw err;
 
       t.plan(files.length);
@@ -42,7 +42,7 @@ test("parse test", function (t) {
         fs.writeFileSync(renderedCanonicalName, renderedCanonicalString);
         fs.writeFileSync(expectedCanonicalName, expectedCanonicalString);
 
-        t.equal(expectedCanonicalString, renderedCanonicalString);
+        t.equal(renderedCanonicalString, expectedCanonicalString);
       }
     })
 })
