@@ -4,6 +4,7 @@ var escodegen = require("escodegen").generate;
 var b = require('ast-types').builders;
 
 var toAst = require("../").toJavaScriptAST;
+var qualifyModelPropertyAccess = require("../").qualifyModelPropertyAccess;
 
 var dom = JSON.parse(fs.readFileSync(__dirname + "/prepared-dom.json").toString());
 
@@ -46,6 +47,8 @@ var programNode = {
 }
 
 var ast = toAst(programNode)
+qualifyModelPropertyAccess(ast)
+
 
 //console.log(ast)
 console.log(escodegen(ast))

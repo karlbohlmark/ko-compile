@@ -3,11 +3,13 @@ var util = require("util");
 var inspect = util.inspect;
 var esparser = require("acorn");
 var parse5 = require("parse5");
+var estraverse = require("estraverse");
 var b = require('ast-types').builders;
 
 var Parser = parse5.Parser;
 
 var traverse = require("./traverse");
+var ScopeChain = require("./scope-chain");
 var BindingAccessor = require("./binding-accessor");
 
 //var parser2 = new parse5.Parser(parse5.TreeAdapters.htmlparser2);
@@ -33,6 +35,8 @@ function compile (tmpl) {
     // 2) Compile - Create rendering AST from DOM
     var ast = toJavaScriptAST(doc);
 
+    qualifyModelPropertyAccess(ast);
+
     //doc = traverse(doc, rewriteForeach);
 
     var s = new parse5.TreeSerializer();
@@ -42,6 +46,52 @@ function compile (tmpl) {
     //process.exit()
     return "module.exports = function(model) { return " +  JSON.stringify("t") + "}"
 }
+
+
+function parentScope(astNode) {
+    var node = astNode.parent;
+    while(!node.scope && (node = node.parent))
+        ;
+    if (node) return node;
+}
+
+
+function qualifyModelPropertyAccess(ast) {
+    var scope = new ScopeChain();
+    var rootModelVarName = 'model';
+    var parent = null;
+    estraverse.traverse(ast, {
+        enter: function (node, parent) {
+            if (node.type == 'FunctionExpression' || node.type == 'FunctionDeclaration') {
+                scope.enter(node.params.map(function (id) { return id.name; }));
+            }
+
+            if (node.type == 'VariableDeclarator') {
+                scope.append(node.id.name)
+            }
+
+            if (node.type == "Identifier" &&
+                parent.type != "VariableDeclarator" &&
+                parent.type != "FunctionDeclaration" &&
+                parent.type != "MemberExpression") {
+
+                console.log("Variable used:" + node.name);
+                if (!scope.contains(node.name)) {
+                    node.name = rootModelVarName + '.' + node.name;
+                }
+
+                console.log(node.name);
+            }
+        },
+        leave: function (node, parent) {
+            if (node.type == 'FunctionExpression' || node.type == 'FunctionDeclaration') {
+                scope.exit(node.params.map(function (id) { return id.name; }));
+            }
+        }
+    });
+}
+
+module.exports.qualifyModelPropertyAccess = qualifyModelPropertyAccess
 
 function removeCircularRefs(node) {
     delete node.parentNode;
@@ -122,13 +172,13 @@ nodeTypes.foreach = function compileForeach(node) {
 
     var bodyNodes = flatten(node.childNodes.map(toJavaScriptAST));
 
-    var itemVarDecl = b.expressionStatement(
-        b.assignmentExpression(
-            '=',
+    var itemVarDecl = b.variableDeclaration('var', [
+        b.variableDeclarator(
             b.identifier(node.loopVar),
             indexedProperty(b.identifier(node.enumerable), b.identifier(node.loopVar))
         )
-    )
+    ])
+    
     bodyNodes.unshift(itemVarDecl);
     var block = b.blockStatement(bodyNodes);
     return b.forInStatement(loopVarDecl, b.identifier(node.enumerable), block, false);
@@ -143,11 +193,25 @@ nodeTypes.documentFragment = function compileDocumentFragment(node) {
         b.blockStatement(children)
     )
 
-    return b.program([fnDecl]);
+    var moduleExports = singleExport(b.identifier('render'));
+
+    return b.program([moduleExports, fnDecl]);
 }
 
 module.exports.toJavaScriptAST = toJavaScriptAST
 
+function singleExport(expression) {
+    return b.expressionStatement(
+        b.assignmentExpression('=',
+            b.memberExpression(
+                b.identifier('module'),
+                b.identifier('exports'),
+                false
+            ),
+            expression
+        )
+    )
+}
 
 function indexedProperty(object, property) {
     return b.memberExpression(
