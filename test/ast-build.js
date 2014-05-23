@@ -39,7 +39,7 @@ var tagNode = {
     childNodes: [spanNode]
 }
 
-var forEachNode = {"nodeName":"foreach","loopVar":"item","enumerable":"items", "childNodes": [tagNode]}
+var forEachNode = {"nodeName":"foreach","loopVar":"item","enumerable": {"type": "Identifier", "name": "items"}, "childNodes": [tagNode]}
 
 var programNode = {
     nodeName: '#document-fragment',

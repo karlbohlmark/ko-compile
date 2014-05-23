@@ -7,7 +7,7 @@ var argv = require('minimist')(process.argv.slice(2));
 console.dir(argv);
 
 var template = argv._.pop()
-var outfile = argv.out
+var outfile = argv.out || template.replace('.html', '.js');
 
 function output(str) {
     if (outfile) {
@@ -18,5 +18,7 @@ function output(str) {
     }
 }
 
-var result = compile(template);
+var templateStr = fs.readFileSync(template).toString();
+
+var result = compile(templateStr);
 output(result);

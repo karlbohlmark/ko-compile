@@ -61,7 +61,10 @@ function qualifyModelPropertyAccess(ast) {
 
     function qualifyIfUndeclared(node) {
         if (!scope.contains(node.name)) {
-            node.name = rootModelVarName + '.' + node.name;
+            node.property = JSON.parse(JSON.stringify(node));
+            node.object = b.identifier(rootModelVarName);
+            node.type = "MemberExpression";
+            delete node.name
         }
     }
 
@@ -79,9 +82,7 @@ function qualifyModelPropertyAccess(ast) {
                 parent.type != "VariableDeclarator" &&
                 parent.type != "FunctionDeclaration" &&
                 parent.type != "MemberExpression") {
-
                 qualifyIfUndeclared(node);
-
             }
 
             if (node.type == "MemberExpression" && parent.type != "MemberExpression") {
@@ -138,7 +139,7 @@ var loopVarCount = 0;
 
 function nextLoopVarName() {
     loopVarCount++;
-    return "i" + (loopVarCount == 1 ? '' : loopVarCount);
+    return "ko_foreach_i" + (loopVarCount == 1 ? '' : loopVarCount);
 }
 
 var nodeTypes = {}
@@ -171,11 +172,23 @@ nodeTypes.interpolation = function compileInterpolation(node) {
     return concatBuffer(node.expression);
 }
 nodeTypes.foreach = function compileForeach(node) {
+    /*
+        <foreach expression="item in items">
+            <span data-bind-text="item.name"></span>
+        </foreach>
+        
+        becomes:
+
+        for (var i in model.items) {
+            var item = model.items[i];
+            buffer += .....
+        }
+    */
     var loopVarName = nextLoopVarName();
     var loopVarDecl = b.variableDeclaration('var', [
         b.variableDeclarator(
             b.identifier(loopVarName),
-            b.literal(0)
+            null
         )
     ])
 
@@ -184,13 +197,13 @@ nodeTypes.foreach = function compileForeach(node) {
     var itemVarDecl = b.variableDeclaration('var', [
         b.variableDeclarator(
             b.identifier(node.loopVar),
-            indexedProperty(b.identifier(node.enumerable), b.identifier(loopVarName))
+            indexedProperty(node.enumerable, b.identifier(loopVarName))
         )
     ])
     
     bodyNodes.unshift(itemVarDecl);
     var block = b.blockStatement(bodyNodes);
-    return b.forInStatement(loopVarDecl, b.identifier(node.enumerable), block, false);
+    return b.forInStatement(loopVarDecl, node.enumerable, block, false);
 }
 nodeTypes.documentFragment = function compileDocumentFragment(node) {
     var children = flatten(node.childNodes.map(toJavaScriptAST));
@@ -265,7 +278,7 @@ function expandForeach (node) {
     return {
         nodeName: meta('foreach'),
         loopVar: expr.left.name,
-        enumerable: expr.right.name,
+        enumerable: expr.right,
         childNodes: [node]
     }
 }
