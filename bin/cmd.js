@@ -29,7 +29,9 @@ function templateReader (name) {
     for(var i = 0; i<dirs.length; i++) {
         var dir = dirs[i];
         var tryPath = path.join(dir, name + '.html');
-        console.log("TRY", tryPath)
+        if (!fs.existsSync(tryPath)) {
+            tryPath = path.join(dir, name, 'template.html');
+        }
         if(fs.existsSync(tryPath)) {
             return fs.readFileSync(tryPath).toString();
         }
