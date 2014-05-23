@@ -16,33 +16,51 @@ var BindingAccessor = require("./binding-accessor");
 //var parser2 = new parse5.Parser(parse5.TreeAdapters.htmlparser2);
 
 module.exports = compile;
+module.exports.domRewrite = domRewrite;
+module.exports.parse = parse;
 
-function compile (tmpl) {
+function compile (tmpl, templateLocator) {
     //process.stderr.write(tmpl)
-    var p = new Parser();
-    var doc = p.parseFragment(tmpl);
+    var doc = parse(tmpl);
+    doc = domRewrite(doc, templateLocator);
+    intermediateResult(doc, "dom");
 
+    // 2) Compile - Create rendering AST from DOM
+    var ast = toJavaScriptAST(doc);
+
+    qualifyModelPropertyAccess(ast.body[1]);
+    intermediateResult(ast, "ast");
+
+    //process.exit()
+    return escodegen(ast);
+}
+
+function domRewrite(doc, templateReader) {
     // 1) Pre process DOM
     // 1.1) Parse data-bindings and expand into attributes.
     //      data-bind="text: myText" -> data-bind-text="myText"
     doc = traverse(doc, parseBindings);
     // 1.2) Expand foreach-bindings into separate nodes.
+    doc = traverse(doc, expandTemplates.bind(null, templateReader));
     doc = traverse(doc, expandForeach);
     doc = traverse(doc, expandTextBinding);
-    intermediateResult(doc, "parsed-bindings");
     doc = traverse(doc, removeCircularRefs);
-    intermediateResult(doc, "no-parents");
+    doc = traverse(doc, removeDataBindAttributes);
+    return doc;
+}
 
-    // 2) Compile - Create rendering AST from DOM
-    var ast = toJavaScriptAST(doc);
+function removeDataBindAttributes (doc) {
+    if (!doc.attrs) return;
 
+    doc.attrs = doc.attrs.filter(function (a) {
+        return a.name.indexOf('data-bind') != 0;
+    })
+}
 
-    intermediateResult(ast, "ast-pre-qualify.json");
-    intermediateResult(ast.body[1], "fn.json");
-    qualifyModelPropertyAccess(ast.body[1]);
-
-    //process.exit()
-    return escodegen(ast);
+function parse (tmpl) {
+    var p = new Parser();
+    var doc = p.parseFragment(tmpl);
+    return doc;
 }
 
 
@@ -53,6 +71,13 @@ function parentScope(astNode) {
     if (node) return node;
 }
 
+function qualifyIdentifier (scopeName, identifier) {
+    // Turn the `identifier` AST node into a MemberExpression.
+    identifier.property = JSON.parse(JSON.stringify(identifier));
+    identifier.object = b.identifier(scopeName);
+    identifier.type = "MemberExpression";
+    delete identifier.name;
+}
 
 function qualifyModelPropertyAccess(ast) {
     var scope = new ScopeChain();
@@ -61,10 +86,7 @@ function qualifyModelPropertyAccess(ast) {
 
     function qualifyIfUndeclared(node) {
         if (!scope.contains(node.name)) {
-            node.property = JSON.parse(JSON.stringify(node));
-            node.object = b.identifier(rootModelVarName);
-            node.type = "MemberExpression";
-            delete node.name
+            qualifyIdentifier(rootModelVarName, node);
         }
     }
 
@@ -86,9 +108,7 @@ function qualifyModelPropertyAccess(ast) {
             }
 
             if (node.type == "MemberExpression" && parent.type != "MemberExpression") {
-                var obj = node.object;
-                while (obj.type == "MemberExpression" && (obj = obj.object))
-                    ;
+                var obj = getMemberExpressionRoot(node);
                 qualifyIfUndeclared(obj);
             }
 
@@ -102,6 +122,14 @@ function qualifyModelPropertyAccess(ast) {
 }
 
 module.exports.qualifyModelPropertyAccess = qualifyModelPropertyAccess
+
+
+function getMemberExpressionRoot (node) {
+    var obj = node.object;
+    while (obj.type == "MemberExpression" && (obj = obj.object))
+        ;
+    return obj;
+}
 
 function removeCircularRefs(node) {
     delete node.parentNode;
@@ -281,6 +309,57 @@ function expandForeach (node) {
         enumerable: expr.right,
         childNodes: [node]
     }
+}
+
+function expandTemplates (templateReader, node) {
+    // This initial version will only be supporting constant (literal)
+    // template expressions.
+    // To support dynamic templates, probably rewrite into template meta-node.
+    /*
+    {
+      "name": "data-bind-template",
+      "value": "'sub-template'",
+      "bindingExpression": {
+        "type": "Literal",
+        "start": 36,
+        "end": 50,
+        "value": "sub-template",
+        "raw": "'sub-template'"
+      }
+    }
+    */
+    var templateDecl = getBindingAttribute(node, 'template');
+    var dataDecl = getBindingAttribute(node, 'data');
+    if (!templateDecl) return;
+
+    var templateDataRootName = dataDecl.bindingExpression.name;
+    var templateName = templateDecl.bindingExpression.value;
+    var templateStr = templateReader(templateName);
+
+    var templateDom = parse(templateStr);
+
+    templateDom = traverse(templateDom, parseBindings);
+    templateDom = traverse(templateDom, scopeGlobalPropertyAccess.bind(null, templateDataRootName));
+    //templateDataRootName
+    
+    node.childNodes = templateDom.childNodes;
+}
+
+function scopeGlobalPropertyAccess (name, node) {
+    if (!node.attrs) return;
+    node.attrs.forEach(function (attr) {
+        var expr = attr.bindingExpression;
+        if (!expr) return;
+
+        if (expr.type == "MemberExpression") {
+            var obj = getMemberExpressionRoot(expr);
+            return
+        }
+
+        qualifyIdentifier(name, expr);
+    })
+    
+    //console.log("ADD SCOPE", expr)
 }
 
 function expandTextBinding (node) {

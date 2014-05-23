@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 var fs = require("fs");
+var path = require("path");
+var glob = require("glob");
 
 var compile = require("../");
 var argv = require('minimist')(process.argv.slice(2));
@@ -8,6 +10,9 @@ console.dir(argv);
 
 var template = argv._.pop()
 var outfile = argv.out || template.replace('.html', '.js');
+var searchDirPattern = argv.paths || '*/';
+
+var dirs = glob.sync(searchDirPattern);
 
 function output(str) {
     if (outfile) {
@@ -20,5 +25,18 @@ function output(str) {
 
 var templateStr = fs.readFileSync(template).toString();
 
-var result = compile(templateStr);
+function templateReader (name) {
+    for(var i = 0; i<dirs.length; i++) {
+        var dir = dirs[i];
+        var tryPath = path.join(dir, name + '.html');
+        console.log("TRY", tryPath)
+        if(fs.existsSync(tryPath)) {
+            return fs.readFileSync(tryPath).toString();
+        }
+    }
+
+    console.log("Could not find template", name, "in", dirs)
+}
+
+var result = compile(templateStr, templateReader);
 output(result);
