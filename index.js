@@ -45,16 +45,14 @@ function domRewrite(doc, templateReader) {
     doc = traverse(doc, expandForeach);
     doc = traverse(doc, expandTextBinding);
     doc = traverse(doc, removeCircularRefs);
-    doc = traverse(doc, removeDataBindAttributes);
+    //doc = traverse(doc, removeDataBindAttributes);
     return doc;
 }
 
 function removeDataBindAttributes (doc) {
     if (!doc.attrs) return;
 
-    doc.attrs = doc.attrs.filter(function (a) {
-        return a.name.indexOf('data-bind') != 0;
-    })
+    doc.attrs = doc.attrs.filter(isDataBindAttribute)
 }
 
 function parse (tmpl) {
@@ -158,8 +156,27 @@ function concatBuffer(node) {
             )
 }
 
-function concatAttr (attr) {
+function renderBindingAttr (attr) {
+    var attrStart = b.literal(' ' + attr.name.replace('data-bind-', '') + '="');
+    var attrValue = attr.bindingExpression;
+    var attrRenderAst = b.binaryExpression('+', attrStart, attrValue);
+
+    return concatBuffer(b.binaryExpression('+', attrRenderAst, b.literal('"')));
+}
+
+function renderAttr (attr) {
+    if (attr.bindingExpression) return renderBindingAttr(attr);
     return concatBuffer(b.literal(' ' + attr.name + '=' + '"' + attr.value + '"'))
+}
+
+function isDataBindAttribute (attr) {
+    return attr.name.indexOf('data-bind') != 0;
+}
+
+function not(pred) {
+    return function (object) {
+        return !pred(object);
+    }
 }
 
 var loopVars = {};
@@ -175,7 +192,8 @@ nodeTypes.tag =  function compileTag(node) {
     var tagName = node.tagName;
     var beginOpenTag = concatBuffer(b.literal('<' + tagName));
     
-    var attributes = (node.attrs || []).map(concatAttr);
+    var attributes = (node.attrs || [])
+        .map(renderAttr);
     
     var endOpenTag = concatBuffer(b.literal('>'));
     var closeTag = concatBuffer(b.literal('</' + tagName + '>'))
@@ -303,6 +321,10 @@ function expandForeach (node) {
     if (!foreachDecl) return;
     var expr = foreachDecl.bindingExpression;
 
+    node.attrs = node.attrs.filter(function (attr) {
+        return attr !== foreachDecl;
+    })
+
     return {
         nodeName: meta('foreach'),
         loopVar: expr.left.name,
@@ -331,6 +353,10 @@ function expandTemplates (templateReader, node) {
     var templateDecl = getBindingAttribute(node, 'template');
     var dataDecl = getBindingAttribute(node, 'data');
     if (!templateDecl) return;
+
+    node.attrs = node.attrs.filter(function (attr) {
+        return attr !== templateDecl && attr != dataDecl;
+    })
 
     var templateDataRootName = dataDecl.bindingExpression.name;
     var templateName = templateDecl.bindingExpression.value;
@@ -366,6 +392,9 @@ function expandTextBinding (node) {
     var textDecl = getBindingAttribute(node, 'text');
     if (!textDecl) return;
 
+    node.attrs = node.attrs.filter(function (attr) {
+        return attr !== textDecl;
+    })
     node.childNodes = [{
         nodeName: meta('interpolation'),
         expression: textDecl.bindingExpression
