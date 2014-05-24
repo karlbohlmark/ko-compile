@@ -71,15 +71,18 @@ function parentScope(astNode) {
 
 function qualifyIdentifier (scopeName, identifier) {
     // Turn the `identifier` AST node into a MemberExpression.
+    console.log("QUALIFY", identifier)
     identifier.property = JSON.parse(JSON.stringify(identifier));
     identifier.object = b.identifier(scopeName);
     identifier.type = "MemberExpression";
     delete identifier.name;
 }
 
-function qualifyModelPropertyAccess(ast) {
-    var scope = new ScopeChain();
-    var rootModelVarName = 'model';
+function qualifyModelPropertyAccess(ast, rootModelVarName) {
+    if (!rootModelVarName) {
+        rootModelVarName = 'model';
+    }
+    var scope = new ScopeChain([rootModelVarName]);
     var parent = null;
 
     function qualifyIfUndeclared(node) {
@@ -98,14 +101,14 @@ function qualifyModelPropertyAccess(ast) {
                 scope.append(node.id.name)
             }
 
-            if (node.type == "Identifier" &&
+            if (node.type == "Identifier" && (!parent || 
                 parent.type != "VariableDeclarator" &&
                 parent.type != "FunctionDeclaration" &&
-                parent.type != "MemberExpression") {
+                parent.type != "MemberExpression")) {
                 qualifyIfUndeclared(node);
             }
 
-            if (node.type == "MemberExpression" && parent.type != "MemberExpression") {
+            if (node.type == "MemberExpression" && (!parent || parent.type != "MemberExpression")) {
                 var obj = getMemberExpressionRoot(node);
                 qualifyIfUndeclared(obj);
             }
@@ -158,6 +161,7 @@ function concatBuffer(node) {
 
 function renderBindingAttr (attr) {
     var attrStart = b.literal(' ' + attr.name.replace('data-bind-', '') + '="');
+    console.log("binding expr", attr.bindingExpression)
     var attrValue = attr.bindingExpression;
     var attrRenderAst = b.binaryExpression('+', attrStart, attrValue);
 
@@ -378,11 +382,14 @@ function scopeGlobalPropertyAccess (name, node) {
         if (!expr) return;
 
         if (expr.type == "MemberExpression") {
+            console.log("WEIRD BRANCH");
             var obj = getMemberExpressionRoot(expr);
             return
         }
+        // TODO, handle expr not being an identifier
 
-        qualifyIdentifier(name, expr);
+        qualifyModelPropertyAccess(expr, name);
+        //qualifyIdentifier(name, expr);
     })
     
     //console.log("ADD SCOPE", expr)
