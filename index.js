@@ -71,7 +71,7 @@ function parentScope(astNode) {
 
 function qualifyIdentifier (scopeName, identifier) {
     // Turn the `identifier` AST node into a MemberExpression.
-    console.log("QUALIFY", identifier)
+    //console.log("QUALIFY", identifier)
     identifier.property = JSON.parse(JSON.stringify(identifier));
     identifier.object = b.identifier(scopeName);
     identifier.type = "MemberExpression";
