@@ -82,7 +82,7 @@ function qualifyModelPropertyAccess(ast, rootModelVarName) {
     if (!rootModelVarName) {
         rootModelVarName = 'model';
     }
-    var scope = new ScopeChain([rootModelVarName]);
+    var scope = new ScopeChain([[rootModelVarName]]);
     var parent = null;
 
     function qualifyIfUndeclared(node) {
