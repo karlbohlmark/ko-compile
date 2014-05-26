@@ -1,0 +1,12 @@
+{
+    "items": [
+        {
+            "href": "http://www.google.se",
+            "text": "Google",
+        },
+        {
+            "href": "http://www.xkcd.com",
+            "text": "xkcd",
+        }
+    ]
+}
