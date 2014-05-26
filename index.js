@@ -42,6 +42,7 @@ function domRewrite(doc, templateReader) {
     doc = traverse(doc, parseBindings);
     // 1.2) Expand foreach-bindings into separate nodes.
     doc = traverse(doc, expandTemplates.bind(null, templateReader));
+    doc = traverse(doc, expandOptions);
     doc = traverse(doc, expandForeach);
     doc = traverse(doc, expandTextBinding);
     doc = traverse(doc, removeCircularRefs);
@@ -335,6 +336,62 @@ function expandForeach (node) {
         enumerable: expr.right,
         childNodes: [node]
     }
+}
+
+function turnLiteralIntoIdentifier (expr) {
+    expr.type = "Identifier";
+    expr.name = expr.value;
+    delete expr.value;
+}
+
+function expandOptions (node) {
+    // Ooptions binding is syntactic sugar for the foreach binding.
+    // This DOM rewrite step, rewrites an options binding into a foreach binding
+    // on a child option tag.
+    var optionsDecl = getBindingAttribute(node, 'options');
+    if (!optionsDecl) return;
+    var expr = optionsDecl.bindingExpression;
+
+    var optionsTextDecl = getBindingAttribute(node, 'optionsText');
+    var optionsValueDecl = getBindingAttribute(node, 'optionsValue');
+
+    node.attrs = node.attrs.filter(function (attr) {
+        return !(
+                 attr === optionsDecl ||
+                 attr === optionsTextDecl ||
+                 attr === optionsValueDecl
+        );
+    })
+
+    optionsTextDecl.name = optionsTextDecl.name.replace('optionsText', 'text');
+    optionsValueDecl.name = optionsValueDecl.name.replace('optionsValue', 'value');
+
+    if (expr.type !== "BinaryExpression") {
+        expr = b.binaryExpression('in', b.identifier('ko_option'), expr); // TODO: fix name collision
+    }
+
+    var optionsVarName = expr.left.name;
+    
+    if (optionsTextDecl.bindingExpression.type == "Literal") {
+        turnLiteralIntoIdentifier(optionsTextDecl.bindingExpression);
+    }
+    if (optionsValueDecl.bindingExpression.type == "Literal") {
+        turnLiteralIntoIdentifier(optionsValueDecl.bindingExpression);
+    }
+
+    var optionsNode = {
+        nodeName: 'option',
+        tagName: 'option',
+        attrs: [{
+            name: "data-bind-foreach",
+            value: optionsVarName + " in " + optionsDecl.value,
+            bindingExpression: expr
+        }
+        , optionsTextDecl, optionsValueDecl],
+        childNodes: []
+    }
+
+    node.childNodes = [optionsNode]
 }
 
 function expandTemplates (templateReader, node) {
