@@ -44,6 +44,7 @@ function domRewrite(doc, templateReader) {
     doc = traverse(doc, expandTemplates.bind(null, templateReader));
     doc = traverse(doc, expandOptions);
     doc = traverse(doc, expandForeach);
+    doc = traverse(doc, expandDisplayBinding);
     doc = traverse(doc, expandTextBinding);
     doc = traverse(doc, removeCircularRefs);
     //doc = traverse(doc, removeDataBindAttributes);
@@ -218,6 +219,10 @@ nodeTypes.tag =  function compileTag(node) {
 }
 nodeTypes.text = function compileText(node) {
     return concatBuffer(b.literal(node.value));
+}
+nodeTypes.if = function compileIf(node) {
+    var consequent = b.blockStatement(flatten(node.childNodes.map(toJavaScriptAST)));
+    return b.ifStatement(node.condition, consequent);
 }
 nodeTypes.interpolation = function compileInterpolation(node) {
     return concatBuffer(node.expression);
@@ -463,6 +468,21 @@ function expandTextBinding (node) {
         nodeName: meta('interpolation'),
         expression: textDecl.bindingExpression
     }]
+}
+
+function expandDisplayBinding (node) {
+    var displayDecl = getBindingAttribute(node, 'display');
+    if (!displayDecl) return;
+
+    node.attrs = node.attrs.filter(function (attr) {
+        return attr !== displayDecl;
+    })
+
+    return {
+        nodeName: meta('if'),
+        condition: displayDecl.bindingExpression,
+        childNodes: [node]
+    }
 }
 
 function parseBindings (node) {
