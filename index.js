@@ -25,7 +25,7 @@ function compile (tmpl, templateLocator) {
     doc = domRewrite(doc, templateLocator);
     intermediateResult(doc, "dom");
 
-    // 2) Compile - Create rendering AST from DOM
+    // Compile
     var ast = toJavaScriptAST(doc);
 
     qualifyModelPropertyAccess(ast.body[1]);
@@ -36,18 +36,16 @@ function compile (tmpl, templateLocator) {
 }
 
 function domRewrite(doc, templateReader) {
-    // 1) Pre process DOM
-    // 1.1) Parse data-bindings and expand into attributes.
-    //      data-bind="text: myText" -> data-bind-text="myText"
+    // Parse all bindings, and transform DOM accordingly.
+    // The order of the following passes is relevant.
     doc = traverse(doc, parseBindings);
-    // 1.2) Expand foreach-bindings into separate nodes.
     doc = traverse(doc, expandTemplates.bind(null, templateReader));
     doc = traverse(doc, expandOptions);
     doc = traverse(doc, expandForeach);
     doc = traverse(doc, expandDisplayBinding);
     doc = traverse(doc, expandTextBinding);
     doc = traverse(doc, removeCircularRefs);
-    //doc = traverse(doc, removeDataBindAttributes);
+
     return doc;
 }
 
@@ -350,9 +348,12 @@ function turnLiteralIntoIdentifier (expr) {
 }
 
 function expandOptions (node) {
-    // Ooptions binding is syntactic sugar for the foreach binding.
-    // This DOM rewrite step, rewrites an options binding into a foreach binding
-    // on a child option tag.
+    // Options binding is syntactic sugar for the foreach binding.
+    // This DOM rewrite step, rewrites an options binding into a foreach
+    // binding on a child option tag.
+    //
+    // ORDERING DEPENDENCY: Before expandForeach (creates foreach binding
+    //                      that needs processing)
     var optionsDecl = getBindingAttribute(node, 'options');
     if (!optionsDecl) return;
     var expr = optionsDecl.bindingExpression;
