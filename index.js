@@ -82,7 +82,7 @@ function qualifyModelPropertyAccess(ast, rootModelVarName) {
     if (!rootModelVarName) {
         rootModelVarName = 'model';
     }
-    var scope = new ScopeChain([[rootModelVarName]]);
+    var scope = new ScopeChain([[rootModelVarName, 'JSON']]);
     var parent = null;
 
     function qualifyIfUndeclared(node) {
@@ -149,6 +149,14 @@ function declareEmptyBuffer() {
     ])
 }
 
+function appendStartComment() {
+    return concatBuffer(htmlCommentExpression('knockoff-start'))
+}
+
+function htmlCommentExpression(commentBody) {
+    return b.literal('<!--' + commentBody + '-->');
+}
+
 function concatBuffer(node) {
     return  b.expressionStatement(
                 b.assignmentExpression(
@@ -160,12 +168,20 @@ function concatBuffer(node) {
 }
 
 function renderBindingAttr (attr) {
-    var attrStart = b.literal(' ' + attr.name.replace('data-bind-', '') + '="');
-    console.log("binding expr", attr.bindingExpression)
+    var quoteChar = '"'
+    var attrName = attr.name.replace('data-bind-', '')
+    console.log("binding attr, name", attrName)
     var attrValue = attr.bindingExpression;
+    // TODO: Remove this temporary hack for handling stringified data-model.
+    if (attrName == 'data-model') {
+        quoteChar = "'";
+        attrValue = b.callExpression(
+            b.memberExpression(b.identifier('JSON'), b.identifier('stringify'), false), [attrValue]
+        )
+    }
+    var attrStart = b.literal(' ' + attrName + '=' + quoteChar);
     var attrRenderAst = b.binaryExpression('+', attrStart, attrValue);
-
-    return concatBuffer(b.binaryExpression('+', attrRenderAst, b.literal('"')));
+    return concatBuffer(b.binaryExpression('+', attrRenderAst, b.literal(quoteChar)));
 }
 
 function renderAttr (attr) {
@@ -248,20 +264,33 @@ nodeTypes.foreach = function compileForeach(node) {
 
     var bodyNodes = flatten(node.childNodes.map(toJavaScriptAST));
 
-    var itemVarDecl = b.variableDeclaration('var', [
-        b.variableDeclarator(
-            b.identifier(node.loopVar),
-            indexedProperty(node.enumerable, b.identifier(loopVarName))
-        )
-    ])
-    
-    bodyNodes.unshift(itemVarDecl);
     var block = b.blockStatement(bodyNodes);
-    return b.forInStatement(loopVarDecl, node.enumerable, block, false);
+
+    var iterationExpr = escodegen(node.expr)
+
+    var e = b.expressionStatement(
+                b.callExpression(
+                    b.memberExpression(node.enumerable, b.identifier("foreach"), false),
+                    [b.functionExpression(null,
+                        [b.identifier(node.loopVar)],
+                        block
+                    )]))
+
+    return b.blockStatement([
+        // Add comment marking beginning of foreach to enable model reattach
+        concatBuffer(htmlCommentExpression('knockoff-foreach:' + iterationExpr)),
+        //b.forInStatement(loopVarDecl, node.enumerable, block, false),
+        e,
+        concatBuffer(htmlCommentExpression('/knockoff-foreach:' + iterationExpr))
+    ]);
 }
 nodeTypes.documentFragment = function compileDocumentFragment(node) {
     var children = flatten(node.childNodes.map(toJavaScriptAST));
+    
+    //children.unshift(appendStartComment())
     children.unshift(declareEmptyBuffer())
+    
+
     children.push(b.returnStatement(b.identifier(bufferVarName)));
 
     var fnDecl = b.functionDeclaration(
@@ -333,11 +362,14 @@ function expandForeach (node) {
         return attr !== foreachDecl;
     })
 
+    console.log(">>> Node attr", node.attrs)
+
     return {
         nodeName: meta('foreach'),
         loopVar: expr.left.name,
         enumerable: expr.right,
-        childNodes: [node]
+        childNodes: [node],
+        expr: expr
     }
 }
 
@@ -370,7 +402,9 @@ function expandOptions (node) {
     })
 
     optionsTextDecl.name = optionsTextDecl.name.replace('optionsText', 'text');
+
     optionsValueDecl.name = optionsValueDecl.name.replace('optionsValue', 'value');
+    optionsValueDecl.value = 'ko_option.' + optionsValueDecl.value
 
     if (expr.type !== "BinaryExpression") {
         expr = b.binaryExpression('in', b.identifier('ko_option'), expr); // TODO: fix name collision
@@ -384,6 +418,18 @@ function expandOptions (node) {
     if (optionsValueDecl.bindingExpression.type == "Literal") {
         turnLiteralIntoIdentifier(optionsValueDecl.bindingExpression);
     }
+
+    optionsTextDecl.bindingExpression = b.memberExpression(
+        b.identifier('ko_options'),
+        optionsTextDecl.bindingExpression,
+        false
+    )
+
+    optionsValueDecl.bindingExpression = b.memberExpression(
+        b.identifier('ko_options'),
+        optionsValueDecl.bindingExpression,
+        false
+    )
 
     var optionsNode = {
         nodeName: 'option',
