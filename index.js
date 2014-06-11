@@ -44,6 +44,7 @@ function domRewrite(doc, templateReader) {
     doc = traverse(doc, expandForeach);
     doc = traverse(doc, expandDisplayBinding);
     doc = traverse(doc, expandTextBinding);
+    doc = traverse(doc, writeDataBindAttr);
     doc = traverse(doc, removeCircularRefs);
 
     return doc;
@@ -270,17 +271,29 @@ nodeTypes.foreach = function compileForeach(node) {
 
     var e = b.expressionStatement(
                 b.callExpression(
-                    b.memberExpression(node.enumerable, b.identifier("foreach"), false),
+                    b.memberExpression(node.enumerable, b.identifier("forEach"), false),
                     [b.functionExpression(null,
                         [b.identifier(node.loopVar)],
                         block
                     )]))
 
+
+    var s = new parse5.TreeSerializer();
+    s.treeAdapter.getNamespaceURI = function () { return "http://www.w3.org/1999/xhtml"; }
+    s._serializeTextNode = function () {}
+    var tmpl = s.serialize(node);
+
+    var itemsOrTemplateComment = b.ifStatement(
+        b.memberExpression(node.enumerable, b.identifier("forEach"), false),
+        e,
+        concatBuffer(htmlCommentExpression(tmpl))
+    )
+
     return b.blockStatement([
         // Add comment marking beginning of foreach to enable model reattach
         concatBuffer(htmlCommentExpression('knockoff-foreach:' + iterationExpr)),
         //b.forInStatement(loopVarDecl, node.enumerable, block, false),
-        e,
+        itemsOrTemplateComment,
         concatBuffer(htmlCommentExpression('/knockoff-foreach:' + iterationExpr))
     ]);
 }
@@ -420,13 +433,13 @@ function expandOptions (node) {
     }
 
     optionsTextDecl.bindingExpression = b.memberExpression(
-        b.identifier('ko_options'),
+        b.identifier('ko_option'),
         optionsTextDecl.bindingExpression,
         false
     )
 
     optionsValueDecl.bindingExpression = b.memberExpression(
-        b.identifier('ko_options'),
+        b.identifier('ko_option'),
         optionsValueDecl.bindingExpression,
         false
     )
@@ -549,6 +562,43 @@ function parseBindings (node) {
             bindingExpression: b.value
         })
     })
+}
+
+function writeDataBindAttr (node) {
+    // TODO: Clean up this ugly slow hack
+    // (Hacked this together to clean up after the (probably bad) idea of expanding
+    // data-bind attributes into data-bind-text, data-bind-src etc.)
+    // It syncs the data-bind attribute with the data-bind-* attributes
+    if (!node.attrs) return
+    var bindingDecl = by('name', 'data-bind', node.attrs)[0];
+    if (!bindingDecl) return
+    var bindingExpression = '({' + bindingDecl.value + '})';
+    var ast = esparser.parse(bindingExpression);
+    var bindingNodes = ast.body[0].expression.properties;
+    node.attrs.forEach(function (attr) {
+        if (attr.name.indexOf('data-bind-') == 0) {
+            var bindingName = attr.name.replace("data-bind-", "")
+
+            var binding = bindingNodes.filter(function (n) {
+                return n.key.name == bindingName;
+            }).pop()
+
+            var newValueAst = attr.bindingExpression
+
+            if (binding) {
+                binding.value = newValueAst
+            }
+        }
+    })
+
+    ast.body[0].expression.properties = bindingNodes.filter(function(n) {
+        return n.key.name !== 'foreach'
+    })
+    
+    //console.log(JSON.stringify(ast.body[0].expression))
+    var val = escodegen(ast.body[0].expression)
+    val = val.substr(1, val.length - 2)
+    bindingDecl.value = val
 }
 
 function getBindingAttribute (node, name) {
