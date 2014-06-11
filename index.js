@@ -240,7 +240,7 @@ nodeTypes.if = function compileIf(node) {
     return b.ifStatement(node.condition, consequent);
 }
 nodeTypes.interpolation = function compileInterpolation(node) {
-    return concatBuffer(node.expression);
+    return concatBuffer(b.logicalExpression('||', node.expression, b.literal('')));
 }
 nodeTypes.foreach = function compileForeach(node) {
     /*
