@@ -23,13 +23,13 @@ function compile (tmpl, templateLocator) {
     //process.stderr.write(tmpl)
     var doc = parse(tmpl);
     doc = domRewrite(doc, templateLocator);
-    intermediateResult(doc, "dom");
+    //intermediateResult(doc, "dom");
 
     // Compile
     var ast = toJavaScriptAST(doc);
 
     qualifyModelPropertyAccess(ast.body[1]);
-    intermediateResult(ast, "ast");
+    //intermediateResult(ast, "ast");
 
     //process.exit()
     return escodegen(ast);
@@ -597,6 +597,7 @@ function writeDataBindAttr (node) {
     
     //console.log(JSON.stringify(ast.body[0].expression))
     var val = escodegen(ast.body[0].expression)
+    val = val.replace(/(\s)+/gm, ' ')
     val = val.substr(1, val.length - 2)
     bindingDecl.value = val
 }
