@@ -23,7 +23,7 @@ function compile (tmpl, templateLocator) {
     //process.stderr.write(tmpl)
     var doc = parse(tmpl);
     doc = domRewrite(doc, templateLocator);
-    //intermediateResult(doc, "dom");
+    intermediateResult(doc, "dom");
 
     // Compile
     var ast = toJavaScriptAST(doc);
@@ -40,11 +40,12 @@ function domRewrite(doc, templateReader) {
     // The order of the following passes is relevant.
     doc = traverse(doc, parseBindings);
     doc = traverse(doc, expandTemplates.bind(null, templateReader));
+    intermediateResult(doc, "expanded-template");
     doc = traverse(doc, expandOptions);
     doc = traverse(doc, expandForeach);
     doc = traverse(doc, expandDisplayBinding);
     doc = traverse(doc, expandTextBinding);
-    doc = traverse(doc, writeDataBindAttr);
+    //doc = traverse(doc, writeDataBindAttr);
     doc = traverse(doc, removeCircularRefs);
 
     return doc;
@@ -171,7 +172,6 @@ function concatBuffer(node) {
 function renderBindingAttr (attr) {
     var quoteChar = '"'
     var attrName = attr.name.replace('data-bind-', '')
-    console.log("binding attr, name", attrName)
     var attrValue = attr.bindingExpression;
     // TODO: Remove this temporary hack for handling stringified data-model.
     if (attrName == 'data-model') {
@@ -375,8 +375,6 @@ function expandForeach (node) {
         return attr !== foreachDecl;
     })
 
-    console.log(">>> Node attr", node.attrs)
-
     return {
         nodeName: meta('foreach'),
         loopVar: expr.left.name,
@@ -513,8 +511,6 @@ function scopeGlobalPropertyAccess (name, node) {
         qualifyModelPropertyAccess(expr, name);
         //qualifyIdentifier(name, expr);
     })
-    
-    //console.log("ADD SCOPE", expr)
 }
 
 function expandTextBinding (node) {
@@ -571,7 +567,9 @@ function writeDataBindAttr (node) {
     // It syncs the data-bind attribute with the data-bind-* attributes
     if (!node.attrs) return
     var bindingDecl = by('name', 'data-bind', node.attrs)[0];
-    if (!bindingDecl) return
+    if (!bindingDecl) {
+        return
+    }
     var bindingExpression = '({' + bindingDecl.value + '})';
     var ast = esparser.parse(bindingExpression);
     var bindingNodes = ast.body[0].expression.properties;
@@ -584,10 +582,6 @@ function writeDataBindAttr (node) {
             }).pop()
 
             var newValueAst = attr.bindingExpression
-
-            if (binding) {
-                binding.value = newValueAst
-            }
         }
     })
 
