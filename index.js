@@ -23,7 +23,7 @@ function compile (tmpl, templateLocator) {
     //process.stderr.write(tmpl)
     var doc = parse(tmpl);
     doc = domRewrite(doc, templateLocator);
-    intermediateResult(doc, "dom");
+    //intermediateResult(doc, "dom");
 
     // Compile
     var ast = toJavaScriptAST(doc);
@@ -40,12 +40,12 @@ function domRewrite(doc, templateReader) {
     // The order of the following passes is relevant.
     doc = traverse(doc, parseBindings);
     doc = traverse(doc, expandTemplates.bind(null, templateReader));
-    intermediateResult(doc, "expanded-template");
+    //intermediateResult(doc, "expanded-template");
     doc = traverse(doc, expandOptions);
     doc = traverse(doc, expandForeach);
     doc = traverse(doc, expandDisplayBinding);
     doc = traverse(doc, expandTextBinding);
-    //doc = traverse(doc, writeDataBindAttr);
+    doc = traverse(doc, writeDataBindAttr);
     doc = traverse(doc, removeCircularRefs);
 
     return doc;
@@ -406,53 +406,65 @@ function expandOptions (node) {
 
     node.attrs = node.attrs.filter(function (attr) {
         return !(
-                 attr === optionsDecl ||
+                 attr === optionsDecl  ||
                  attr === optionsTextDecl ||
                  attr === optionsValueDecl
         );
     })
-
-    optionsTextDecl.name = optionsTextDecl.name.replace('optionsText', 'text');
-
-    optionsValueDecl.name = optionsValueDecl.name.replace('optionsValue', 'value');
-    optionsValueDecl.value = 'ko_option.' + optionsValueDecl.value
 
     if (expr.type !== "BinaryExpression") {
         expr = b.binaryExpression('in', b.identifier('ko_option'), expr); // TODO: fix name collision
     }
 
     var optionsVarName = expr.left.name;
-    
-    if (optionsTextDecl.bindingExpression.type == "Literal") {
-        turnLiteralIntoIdentifier(optionsTextDecl.bindingExpression);
-    }
-    if (optionsValueDecl.bindingExpression.type == "Literal") {
-        turnLiteralIntoIdentifier(optionsValueDecl.bindingExpression);
+    // Option attributes
+    var attrs = [{
+            name: "data-bind-foreach",
+            value: optionsVarName + " in " + optionsDecl.value,
+            bindingExpression: expr
+        }]
+
+    if (optionsTextDecl) {
+        optionsTextDecl.name = optionsTextDecl.name.replace('optionsText', 'text');
+        if (optionsTextDecl.bindingExpression.type == "Literal") {
+            turnLiteralIntoIdentifier(optionsTextDecl.bindingExpression);
+        }
+        optionsTextDecl.bindingExpression = b.memberExpression(
+            b.identifier('ko_option'),
+            optionsTextDecl.bindingExpression,
+            false
+        )
+        attrs.push(optionsTextDecl)
     }
 
-    optionsTextDecl.bindingExpression = b.memberExpression(
-        b.identifier('ko_option'),
-        optionsTextDecl.bindingExpression,
-        false
-    )
-
-    optionsValueDecl.bindingExpression = b.memberExpression(
-        b.identifier('ko_option'),
-        optionsValueDecl.bindingExpression,
-        false
-    )
+    if (optionsValueDecl) {
+        optionsValueDecl.name = optionsValueDecl.name.replace('optionsValue', 'value');
+        optionsValueDecl.value = 'ko_option.' + optionsValueDecl.value
+        if (optionsValueDecl.bindingExpression.type == "Literal") {
+            turnLiteralIntoIdentifier(optionsValueDecl.bindingExpression);
+        }
+        optionsValueDecl.bindingExpression = b.memberExpression(
+            b.identifier('ko_option'),
+            optionsValueDecl.bindingExpression,
+            false
+        )
+        attrs.push(optionsValueDecl)
+    }
 
     var optionsNode = {
         nodeName: 'option',
         tagName: 'option',
-        attrs: [{
-            name: "data-bind-foreach",
-            value: optionsVarName + " in " + optionsDecl.value,
-            bindingExpression: expr
-        }
-        , optionsTextDecl, optionsValueDecl],
+        attrs: attrs,
         childNodes: []
     }
+
+    var objExpression = getDataBindObjectExpression(node);
+    var properties = objExpression.properties;
+    objExpression.properties = objExpression.properties.filter(function (prop) {
+        var name = prop.key.name || prop.key.value;
+        return name !== "optionsValue" && name !== "optionsText" && name !== "options";
+    })
+    setDataBindObjectExpression(node, objExpression);
 
     node.childNodes = [optionsNode]
 }
@@ -565,40 +577,58 @@ function writeDataBindAttr (node) {
     // (Hacked this together to clean up after the (probably bad) idea of expanding
     // data-bind attributes into data-bind-text, data-bind-src etc.)
     // It syncs the data-bind attribute with the data-bind-* attributes
+    var dataBindExpression = getDataBindObjectExpression(node);
+    if (!dataBindExpression) return;
+    var bindingNodes = dataBindExpression.properties;
+//    node.attrs.forEach(function (attr) {
+//        if (attr.name.indexOf('data-bind-') == 0) {
+//            var bindingName = attr.name.replace("data-bind-", "")
+//
+//            var binding = bindingNodes.filter(function (n) {
+//                return n.key.name == bindingName;
+//            }).pop()
+//
+//            var newValueAst = attr.bindingExpression
+//        }
+//    })
+    dataBindExpression.properties = bindingNodes.filter(function(n) {
+        return n.key.name !== 'foreach'
+    })
+    setDataBindObjectExpression(node, dataBindExpression)
+}
+
+function getDataBindObjectExpression(node) {
+    if (!node.attrs) return
+    var bindingDecl = by('name', 'data-bind', node.attrs)[0];
+    if (!bindingDecl) return
+    var bindingExpression = '({' + bindingDecl.value + '})';
+    var ast = esparser.parse(bindingExpression);
+    return ast.body[0].expression;
+}
+
+function setDataBindObjectExpression(node, expr) {
     if (!node.attrs) return
     var bindingDecl = by('name', 'data-bind', node.attrs)[0];
     if (!bindingDecl) {
         return
     }
-    var bindingExpression = '({' + bindingDecl.value + '})';
-    var ast = esparser.parse(bindingExpression);
-    var bindingNodes = ast.body[0].expression.properties;
-    node.attrs.forEach(function (attr) {
-        if (attr.name.indexOf('data-bind-') == 0) {
-            var bindingName = attr.name.replace("data-bind-", "")
 
-            var binding = bindingNodes.filter(function (n) {
-                return n.key.name == bindingName;
-            }).pop()
-
-            var newValueAst = attr.bindingExpression
-        }
-    })
-
-    ast.body[0].expression.properties = bindingNodes.filter(function(n) {
-        return n.key.name !== 'foreach'
-    })
-    
-    //console.log(JSON.stringify(ast.body[0].expression))
-    var val = escodegen(ast.body[0].expression)
+    var val = escodegen(expr)
     val = val.replace(/(\s)+/gm, ' ')
     val = val.substr(1, val.length - 2)
-    bindingDecl.value = val
+    bindingDecl.value = val;
 }
 
 function getBindingAttribute (node, name) {
     if (!node.attrs) return;
     return by('name', 'data-bind-' + name, node.attrs)[0];
+}
+
+function removeBindingAttribute(node, name) {
+    if (!node.attrs) return;
+    node.attrs = node.attrs.filter(function (a) {
+        return a.name !== 'data-bind-' + name
+    })
 }
 
 function by(property, value, arr) {
