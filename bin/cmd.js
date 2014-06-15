@@ -6,7 +6,6 @@ var glob = require("glob");
 
 var compile = require("../");
 var argv = require('minimist')(process.argv.slice(2));
-console.dir(argv);
 
 var template = argv._.pop()
 var outfile = argv.out || template.replace('.html', '.js');
