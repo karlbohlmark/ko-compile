@@ -214,6 +214,9 @@ nodeTypes.tag =  function compileTag(node) {
     var beginOpenTag = concatBuffer(b.literal('<' + tagName));
     
     var attributes = (node.attrs || [])
+        .filter(function (a) {
+            return a.name !== 'data-bind-change'
+        })
         .map(renderAttr);
     
     var endOpenTag = concatBuffer(b.literal('>'));
